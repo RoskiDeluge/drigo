@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Drigo Prototype - Local DuckDB Workbench</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "apache-arrow": "https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/+esm"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --bg: #f5f1ea;
+        --ink: #1f1d1a;
+        --muted: #6b655e;
+        --accent: #1c6b5f;
+        --accent-2: #d2a84a;
+        --panel: #fff8f0;
+        --border: #e2d7c6;
+        --shadow: rgba(33, 24, 18, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino", "Times New Roman", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, #fbf7f0 0%, #f2e7d7 45%, #efe3d1 100%),
+          linear-gradient(120deg, rgba(28, 107, 95, 0.12), rgba(210, 168, 74, 0.15));
+        min-height: 100vh;
+      }
+
+      header {
+        padding: 28px 36px 18px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255, 248, 240, 0.7);
+        backdrop-filter: blur(6px);
+      }
+
+      header h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        letter-spacing: 0.5px;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 24px;
+        padding: 28px 36px 36px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: 0 18px 35px -25px var(--shadow);
+      }
+
+      .sidebar {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .status {
+        display: grid;
+        gap: 8px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .status strong {
+        color: var(--ink);
+      }
+
+      .history {
+        display: grid;
+        gap: 8px;
+        font-size: 13px;
+      }
+
+      .history button {
+        text-align: left;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        background: #fffdf7;
+        border-radius: 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .history button:hover {
+        border-color: var(--accent);
+      }
+
+      .main {
+        padding: 22px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: transparent;
+        color: var(--ink);
+        border: 1px solid var(--border);
+        padding: 10px 14px;
+        border-radius: 12px;
+        cursor: pointer;
+      }
+
+      .editor {
+        width: 100%;
+        min-height: 170px;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        font-family: "SFMono-Regular", "Menlo", "Courier New", monospace;
+        font-size: 14px;
+        background: #fffdf7;
+      }
+
+      .results {
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: #fffdf7;
+        padding: 12px;
+        overflow: auto;
+        max-height: 360px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+      }
+
+      th {
+        background: #f7efe2;
+        position: sticky;
+        top: 0;
+      }
+
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 900px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Drigo: Local DuckDB Workbench</h1>
+      <p>Minimal prototype: local DuckDB, query editor, results, and quick sample load.</p>
+    </header>
+
+    <main class="shell">
+      <aside class="panel sidebar">
+        <div class="status">
+          <strong>Status</strong>
+          <div id="statusLine">Booting DuckDB...</div>
+          <div class="note">Tip: serve this file via a local server if file:// blocks workers.</div>
+        </div>
+
+        <div class="status">
+          <strong>Import Files</strong>
+          <div id="dropzone" class="dropzone">
+            Drop CSV, Parquet, or JSON files here
+            <div class="note">or click to choose files</div>
+          </div>
+          <input id="fileInput" type="file" multiple style="display: none" />
+        </div>
+
+        <div class="status">
+          <strong>Sample Dataset</strong>
+          <div class="note">Load a tiny CSV into DuckDB as table <code>sample</code>.</div>
+        </div>
+
+        <div class="history">
+          <strong>Query History</strong>
+          <div id="historyList" class="note">No queries yet.</div>
+        </div>
+
+        <div class="history">
+          <strong>Saved Queries (Fireproof)</strong>
+          <div id="savedList" class="note">Fireproof not connected.</div>
+        </div>
+
+        <div class="status">
+          <strong>Maintenance</strong>
+          <button class="secondary" id="resetBtn" type="button">Reset Local Fireproof Data</button>
+          <div class="note">Clears local Fireproof storage for the drigo db only.</div>
+        </div>
+      </aside>
+
+      <section class="panel main">
+        <div class="toolbar">
+          <button class="primary" id="runBtn">Run Query</button>
+          <button class="secondary" id="sampleBtn">Load Sample Data</button>
+          <button class="secondary" id="clearBtn">Clear Results</button>
+        </div>
+
+        <textarea class="editor" id="editor">SELECT 42 AS answer;</textarea>
+
+        <div class="results">
+          <div id="resultMeta" class="note">Results will appear here.</div>
+          <div id="resultTable"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      async function loadDuckDBModule() {
+        if (window.__DRIGO_DUCKDB_MODULE__) {
+          const blob = new Blob([window.__DRIGO_DUCKDB_MODULE__], { type: "text/javascript" });
+          const url = URL.createObjectURL(blob);
+          const mod = await import(url);
+          URL.revokeObjectURL(url);
+          return mod;
+        }
+        return await import(
+          "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@latest/dist/duckdb-browser.mjs"
+        );
+      }
+
+      async function loadFireproofModule() {
+        if (window.__DRIGO_FIREPROOF_MODULE__) {
+          const blob = new Blob([window.__DRIGO_FIREPROOF_MODULE__], { type: "text/javascript" });
+          const url = URL.createObjectURL(blob);
+          const mod = await import(url);
+          URL.revokeObjectURL(url);
+          return mod;
+        }
+        return await import("https://cdn.jsdelivr.net/npm/@fireproof/core@0.5.13/dist/src/fireproof.mjs");
+      }
+
+      const duckdb = await loadDuckDBModule();
+      const fireproofModule = await loadFireproofModule();
+
+      const statusLine = document.getElementById("statusLine");
+      const editor = document.getElementById("editor");
+      const runBtn = document.getElementById("runBtn");
+      const sampleBtn = document.getElementById("sampleBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const resultMeta = document.getElementById("resultMeta");
+      const resultTable = document.getElementById("resultTable");
+      const historyList = document.getElementById("historyList");
+      const savedList = document.getElementById("savedList");
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("fileInput");
+      const resetBtn = document.getElementById("resetBtn");
+
+      const historyKey = "drigo.query.history";
+      const historyLimit = 12;
+      let db = null;
+      let conn = null;
+      let fp = null;
+
+      function setStatus(text, isError = false) {
+        statusLine.textContent = text;
+        statusLine.style.color = isError ? "#b44d3c" : "inherit";
+      }
+
+      function loadHistory() {
+        const raw = localStorage.getItem(historyKey);
+        if (!raw) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function saveHistory(history) {
+        localStorage.setItem(historyKey, JSON.stringify(history.slice(0, historyLimit)));
+      }
+
+      function renderHistory() {
+        const history = loadHistory();
+        if (!history.length) {
+          historyList.textContent = "No queries yet.";
+          return;
+        }
+        historyList.innerHTML = "";
+        history.forEach((entry) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = entry;
+          btn.addEventListener("click", () => {
+            editor.value = entry;
+          });
+          historyList.appendChild(btn);
+        });
+      }
+
+      function recordHistory(query) {
+        const trimmed = query.trim();
+        if (!trimmed) return;
+        const history = loadHistory();
+        const deduped = [trimmed, ...history.filter((item) => item !== trimmed)];
+        saveHistory(deduped);
+        renderHistory();
+      }
+
+      async function initFireproof() {
+        const Fireproof = fireproofModule && fireproofModule.Fireproof;
+        if (!Fireproof || !Fireproof.storage) {
+          savedList.textContent = "Fireproof not available.";
+          return;
+        }
+        fp = Fireproof.storage("drigo");
+        await ensureSavedDoc();
+        await renderSavedQueries();
+      }
+
+      async function ensureSavedDoc() {
+        try {
+          await fp.get("saved-queries");
+        } catch {
+          await fp.put({ _id: "saved-queries", items: [] });
+        }
+      }
+
+      async function saveQueryToFireproof(query) {
+        if (!fp) return;
+        const trimmed = query.trim();
+        if (!trimmed) return;
+        const doc = await fp.get("saved-queries");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        const next = [{ text: trimmed, ts: Date.now() }, ...items].slice(0, historyLimit);
+        await fp.put({ ...doc, items: next });
+        await renderSavedQueries();
+      }
+
+      async function renderSavedQueries() {
+        if (!fp) return;
+        const doc = await fp.get("saved-queries");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        if (!items.length) {
+          savedList.textContent = "No saved queries yet.";
+          return;
+        }
+        savedList.innerHTML = "";
+        items.forEach((entry) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = entry.text;
+          btn.addEventListener("click", () => {
+            editor.value = entry.text;
+          });
+          savedList.appendChild(btn);
+        });
+      }
+
+      function clearResults() {
+        resultMeta.textContent = "Results cleared.";
+        resultTable.innerHTML = "";
+      }
+
+      function renderResult(result) {
+        const rows = result.toArray();
+        const fields = result.schema.fields.map((field) => field.name);
+        resultMeta.textContent = `${rows.length} row(s)`;
+
+        if (!rows.length) {
+          resultTable.innerHTML = "";
+          return;
+        }
+
+        const table = document.createElement("table");
+        const thead = document.createElement("thead");
+        const headRow = document.createElement("tr");
+        fields.forEach((name) => {
+          const th = document.createElement("th");
+          th.textContent = name;
+          headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        rows.forEach((row) => {
+          const tr = document.createElement("tr");
+          fields.forEach((field) => {
+            const td = document.createElement("td");
+            const value = row[field];
+            td.textContent = value === null || value === undefined ? "null" : String(value);
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+
+        resultTable.innerHTML = "";
+        resultTable.appendChild(table);
+      }
+
+      async function initDuckDB() {
+        setStatus("Loading DuckDB wasm...");
+        const logger = new duckdb.ConsoleLogger();
+        const bundles = window.__DRIGO_DUCKDB_BUNDLES__ || duckdb.getJsDelivrBundles();
+        const bundle = await duckdb.selectBundle(bundles);
+        if (!bundle.mainWorker) {
+          throw new Error("DuckDB bundle missing worker.");
+        }
+        const worker = window.__DRIGO_DUCKDB_BUNDLES__
+          ? new Worker(bundle.mainWorker)
+          : new Worker(
+              URL.createObjectURL(
+                new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" })
+              )
+            );
+        db = new duckdb.AsyncDuckDB(logger, worker);
+        await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        conn = await db.connect();
+        setStatus("DuckDB ready.");
+      }
+
+      async function runQuery() {
+        if (!conn) {
+          setStatus("DuckDB not ready yet.", true);
+          return;
+        }
+        const query = editor.value;
+        setStatus("Running query...");
+        try {
+          const result = await conn.query(query);
+          renderResult(result);
+          recordHistory(query);
+          await saveQueryToFireproof(query);
+          setStatus("Query complete.");
+        } catch (err) {
+          setStatus("Query failed. Check console for details.", true);
+          resultMeta.textContent = String(err);
+          resultTable.innerHTML = "";
+          console.error(err);
+        }
+      }
+
+      async function loadSampleData() {
+        if (!conn) {
+          setStatus("DuckDB not ready yet.", true);
+          return;
+        }
+        const csv = [
+          "team,week,deploys,latency_ms",
+          "data-platform,1,24,180",
+          "data-platform,2,31,160",
+          "analytics,1,18,210",
+          "analytics,2,23,190",
+          "infra,1,12,240",
+          "infra,2,16,220"
+        ].join("\n");
+
+        try {
+          await conn.query("DROP TABLE IF EXISTS sample;");
+          await db.registerFileText("sample.csv", csv);
+          await conn.query("CREATE OR REPLACE TABLE sample AS SELECT * FROM read_csv_auto('sample.csv');");
+          editor.value = "SELECT team, AVG(latency_ms) AS avg_latency FROM sample GROUP BY team;";
+          setStatus("Sample data loaded.");
+        } catch (err) {
+          setStatus("Sample load failed. Check console.", true);
+          console.error(err);
+        }
+      }
+
+      runBtn.addEventListener("click", runQuery);
+      sampleBtn.addEventListener("click", loadSampleData);
+      clearBtn.addEventListener("click", clearResults);
+
+      async function resetLocalFireproof() {
+        const ok = window.confirm(
+          "This will clear local Fireproof data for the drigo db only. Continue?"
+        );
+        if (!ok) return;
+        try {
+          const dbName = "drigo";
+          const configKey = `fp.${dbName}`;
+          localStorage.removeItem(configKey);
+          if (indexedDB && indexedDB.databases) {
+            const dbs = await indexedDB.databases();
+            await Promise.all(
+              dbs
+                .filter((db) => db.name && db.name.includes(`.${dbName}.`))
+                .map(
+                  (db) =>
+                    new Promise((resolve) => {
+                      const req = indexedDB.deleteDatabase(db.name);
+                      req.onsuccess = () => resolve();
+                      req.onerror = () => resolve();
+                      req.onblocked = () => resolve();
+                    })
+                )
+            );
+          }
+          setStatus("Local Fireproof data cleared.");
+          savedList.textContent = "Fireproof not connected.";
+          setTimeout(() => window.location.reload(), 300);
+        } catch (err) {
+          setStatus("Failed to reset Fireproof data.", true);
+          console.error(err);
+        }
+      }
+
+      function sanitizeTableName(fileName) {
+        const base = fileName.replace(/\.[^.]+$/, "");
+        const cleaned = base.replace(/[^a-zA-Z0-9_]+/g, "_").replace(/^(\d)/, "_$1");
+        return cleaned.toLowerCase() || "imported_data";
+      }
+
+      async function importFile(file) {
+        if (!db || !conn) {
+          setStatus("DuckDB not ready yet.", true);
+          return;
+        }
+        const buffer = new Uint8Array(await file.arrayBuffer());
+        await db.registerFileBuffer(file.name, buffer);
+        const table = sanitizeTableName(file.name);
+        const ext = file.name.split(".").pop().toLowerCase();
+        let sql = "";
+        if (ext === "csv") {
+          sql = `CREATE OR REPLACE TABLE ${table} AS SELECT * FROM read_csv_auto('${file.name}');`;
+        } else if (ext === "parquet" || ext === "parq") {
+          sql = `CREATE OR REPLACE TABLE ${table} AS SELECT * FROM read_parquet('${file.name}');`;
+        } else if (ext === "json" || ext === "ndjson" || ext === "jsonl") {
+          sql = `CREATE OR REPLACE TABLE ${table} AS SELECT * FROM read_json_auto('${file.name}');`;
+        } else {
+          throw new Error(`Unsupported file type: ${ext}`);
+        }
+        await conn.query(sql);
+        editor.value = `SELECT * FROM ${table} LIMIT 50;`;
+        setStatus(`Imported ${file.name} as ${table}.`);
+      }
+
+      function handleFiles(files) {
+        const list = Array.from(files);
+        if (!list.length) return;
+        list.reduce(
+          (chain, file) =>
+            chain.then(() => importFile(file).catch((err) => setStatus(err.message, true))),
+          Promise.resolve()
+        );
+      }
+
+      dropzone.addEventListener("click", () => fileInput.click());
+      dropzone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        dropzone.classList.add("is-active");
+      });
+      dropzone.addEventListener("dragleave", () => {
+        dropzone.classList.remove("is-active");
+      });
+      dropzone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dropzone.classList.remove("is-active");
+        handleFiles(event.dataTransfer.files);
+      });
+      fileInput.addEventListener("change", (event) => handleFiles(event.target.files));
+      resetBtn.addEventListener("click", resetLocalFireproof);
+
+      renderHistory();
+      initFireproof().catch((err) => {
+        savedList.textContent = "Fireproof init failed.";
+        console.error(err);
+      });
+      initDuckDB().catch((err) => {
+        setStatus("DuckDB failed to initialize.", true);
+        console.error(err);
+      });
+    </script>
+  </body>
+</html>

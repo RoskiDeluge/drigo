@@ -1,0 +1,13 @@
+{
+  "name": "drigo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:single": "node scripts/build-single.mjs"
+  },
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "^1.28.1",
+    "@fireproof/core": "^0.5.13",
+    "esbuild": "^0.20.2"
+  }
+}
