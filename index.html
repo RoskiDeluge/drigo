@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Drigo Prototype - Local DuckDB Workbench</title>
+    <title>Drigo - Local DuckDB Workbench</title>
     <script type="importmap">
       {
         "imports": {
@@ -93,6 +93,22 @@
         font-size: 13px;
       }
 
+      .input {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        font-family: inherit;
+        font-size: 13px;
+        background: #fffdf7;
+      }
+
+      .toolbar-compact {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
       .history button {
         text-align: left;
         padding: 8px 10px;
@@ -108,22 +124,31 @@
       }
 
       .main {
-        padding: 22px;
+        padding: 12px;
         display: grid;
-        gap: 16px;
+        gap: 6px;
+        align-content: start;
       }
 
       .toolbar {
         display: flex;
-        gap: 12px;
+        gap: 6px;
         flex-wrap: wrap;
+        align-items: center;
+        margin: 0;
+        padding: 0;
+      }
+
+      .toolbar button {
+        margin: 0;
+        line-height: 1.1;
       }
 
       button.primary {
         background: var(--accent);
         color: white;
         border: none;
-        padding: 10px 16px;
+        padding: 6px 12px;
         border-radius: 12px;
         font-weight: 600;
         cursor: pointer;
@@ -133,9 +158,13 @@
         background: transparent;
         color: var(--ink);
         border: 1px solid var(--border);
-        padding: 10px 14px;
+        padding: 6px 12px;
         border-radius: 12px;
         cursor: pointer;
+      }
+
+      .toolbar button {
+        height: 26px;
       }
 
       .editor {
@@ -191,7 +220,7 @@
   </head>
   <body>
     <header>
-      <h1>Drigo: Local DuckDB Workbench</h1>
+      <h1>Drigo: Localfirst DuckDB Workbench</h1>
       <p>Minimal prototype: local DuckDB, query editor, results, and quick sample load.</p>
     </header>
 
@@ -223,8 +252,33 @@
         </div>
 
         <div class="history">
+          <strong>Run Log (Fireproof)</strong>
+          <div id="runLogList" class="note">No run log yet.</div>
+        </div>
+
+        <div class="status">
+          <strong>Dataset</strong>
+          <div id="datasetInfo" class="note">No dataset loaded.</div>
+        </div>
+
+        <div class="history">
           <strong>Saved Queries (Fireproof)</strong>
           <div id="savedList" class="note">Fireproof not connected.</div>
+        </div>
+
+        <div class="status">
+          <strong>Models</strong>
+          <input id="modelName" class="input" placeholder="model name" />
+          <div class="toolbar-compact">
+            <button class="secondary" id="saveModelBtn" type="button">Save Model</button>
+            <button class="secondary" id="runModelBtn" type="button">Run Model</button>
+            <button class="secondary" id="runDownstreamBtn" type="button">Run Downstream</button>
+          </div>
+        </div>
+
+        <div class="history">
+          <strong>Model List</strong>
+          <div id="modelList" class="note">No models yet.</div>
         </div>
 
         <div class="status">
@@ -286,7 +340,14 @@
       const resultMeta = document.getElementById("resultMeta");
       const resultTable = document.getElementById("resultTable");
       const historyList = document.getElementById("historyList");
+      const runLogList = document.getElementById("runLogList");
       const savedList = document.getElementById("savedList");
+      const datasetInfo = document.getElementById("datasetInfo");
+      const modelNameInput = document.getElementById("modelName");
+      const saveModelBtn = document.getElementById("saveModelBtn");
+      const runModelBtn = document.getElementById("runModelBtn");
+      const runDownstreamBtn = document.getElementById("runDownstreamBtn");
+      const modelList = document.getElementById("modelList");
       const dropzone = document.getElementById("dropzone");
       const fileInput = document.getElementById("fileInput");
       const resetBtn = document.getElementById("resetBtn");
@@ -296,6 +357,8 @@
       let db = null;
       let conn = null;
       let fp = null;
+      let currentDataset = null;
+      let modelState = { items: [], dirty: new Set() };
 
       function setStatus(text, isError = false) {
         statusLine.textContent = text;
@@ -348,11 +411,17 @@
         const Fireproof = fireproofModule && fireproofModule.Fireproof;
         if (!Fireproof || !Fireproof.storage) {
           savedList.textContent = "Fireproof not available.";
+          runLogList.textContent = "Fireproof not available.";
+          modelList.textContent = "Fireproof not available.";
           return;
         }
         fp = Fireproof.storage("drigo");
         await ensureSavedDoc();
+        await ensureRunLogDoc();
+        await ensureModelsDoc();
         await renderSavedQueries();
+        await renderRunLog();
+        await renderModels();
       }
 
       async function ensureSavedDoc() {
@@ -394,13 +463,69 @@
         });
       }
 
+      async function ensureRunLogDoc() {
+        try {
+          await fp.get("run-log");
+        } catch {
+          await fp.put({ _id: "run-log", items: [] });
+        }
+      }
+
+      async function ensureModelsDoc() {
+        try {
+          await fp.get("models");
+        } catch {
+          await fp.put({ _id: "models", items: [] });
+        }
+      }
+
+      function formatTimestamp(ts) {
+        const date = new Date(ts);
+        return date.toLocaleString();
+      }
+
+      function sampleRows(rows, limit = 5) {
+        if (!Array.isArray(rows)) return [];
+        return rows.slice(0, limit);
+      }
+
+      async function appendRunLog(entry) {
+        if (!fp) return;
+        const doc = await fp.get("run-log");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        const next = [entry, ...items].slice(0, historyLimit);
+        await fp.put({ ...doc, items: next });
+        await renderRunLog();
+      }
+
+      async function renderRunLog() {
+        if (!fp) return;
+        const doc = await fp.get("run-log");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        if (!items.length) {
+          runLogList.textContent = "No run log yet.";
+          return;
+        }
+        runLogList.innerHTML = "";
+        items.forEach((entry) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const label = `${formatTimestamp(entry.ts)} · ${entry.rows ?? 0} rows`;
+          btn.textContent = `${label} · ${entry.sql}`;
+          btn.addEventListener("click", () => {
+            editor.value = entry.sql;
+          });
+          runLogList.appendChild(btn);
+        });
+      }
+
       function clearResults() {
         resultMeta.textContent = "Results cleared.";
         resultTable.innerHTML = "";
       }
 
-      function renderResult(result) {
-        const rows = result.toArray();
+      function renderResult(result, rowsOverride = null) {
+        const rows = rowsOverride || result.toArray();
         const fields = result.schema.fields.map((field) => field.name);
         resultMeta.textContent = `${rows.length} row(s)`;
 
@@ -458,6 +583,63 @@
         setStatus("DuckDB ready.");
       }
 
+      function setDatasetInfo(info) {
+        currentDataset = info;
+        if (!info) {
+          datasetInfo.textContent = "No dataset loaded.";
+          return;
+        }
+        const details = [
+          info.label,
+          info.size ? `${info.size} bytes` : null,
+          info.modified ? `modified ${new Date(info.modified).toLocaleString()}` : null,
+          info.hash ? `hash ${info.hash}` : null
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        datasetInfo.textContent = details;
+      }
+
+      async function hashBuffer(buffer) {
+        const digest = await crypto.subtle.digest("SHA-256", buffer);
+        const bytes = Array.from(new Uint8Array(digest));
+        return bytes.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+      }
+
+      async function computeFileFingerprint(file) {
+        const chunkSize = 1024 * 1024;
+        const start = file.slice(0, Math.min(chunkSize, file.size));
+        const end = file.size > chunkSize ? file.slice(file.size - chunkSize) : null;
+        const startBuffer = await start.arrayBuffer();
+        let combined = startBuffer;
+        if (end) {
+          const endBuffer = await end.arrayBuffer();
+          const combinedBytes = new Uint8Array(startBuffer.byteLength + endBuffer.byteLength);
+          combinedBytes.set(new Uint8Array(startBuffer), 0);
+          combinedBytes.set(new Uint8Array(endBuffer), startBuffer.byteLength);
+          combined = combinedBytes.buffer;
+        }
+        const hash = await hashBuffer(combined);
+        return {
+          label: file.name,
+          size: file.size,
+          modified: file.lastModified,
+          hash
+        };
+      }
+
+      async function computeTextFingerprint(label, text) {
+        const encoder = new TextEncoder();
+        const buffer = encoder.encode(text).buffer;
+        const hash = await hashBuffer(buffer);
+        return {
+          label,
+          size: text.length,
+          modified: Date.now(),
+          hash
+        };
+      }
+
       async function runQuery() {
         if (!conn) {
           setStatus("DuckDB not ready yet.", true);
@@ -465,16 +647,34 @@
         }
         const query = editor.value;
         setStatus("Running query...");
+        const startedAt = performance.now();
         try {
           const result = await conn.query(query);
-          renderResult(result);
+          const rows = result.toArray();
+          renderResult(result, rows);
           recordHistory(query);
           await saveQueryToFireproof(query);
+          await appendRunLog({
+            ts: Date.now(),
+            sql: query.trim(),
+            rows: rows.length,
+            runtimeMs: Math.round(performance.now() - startedAt),
+            dataset: currentDataset,
+            sample: sampleRows(rows)
+          });
           setStatus("Query complete.");
         } catch (err) {
           setStatus("Query failed. Check console for details.", true);
           resultMeta.textContent = String(err);
           resultTable.innerHTML = "";
+          await appendRunLog({
+            ts: Date.now(),
+            sql: query.trim(),
+            rows: 0,
+            runtimeMs: Math.round(performance.now() - startedAt),
+            dataset: currentDataset,
+            error: String(err)
+          });
           console.error(err);
         }
       }
@@ -499,6 +699,7 @@
           await db.registerFileText("sample.csv", csv);
           await conn.query("CREATE OR REPLACE TABLE sample AS SELECT * FROM read_csv_auto('sample.csv');");
           editor.value = "SELECT team, AVG(latency_ms) AS avg_latency FROM sample GROUP BY team;";
+          setDatasetInfo(await computeTextFingerprint("sample.csv", csv));
           setStatus("Sample data loaded.");
         } catch (err) {
           setStatus("Sample load failed. Check console.", true);
@@ -509,6 +710,9 @@
       runBtn.addEventListener("click", runQuery);
       sampleBtn.addEventListener("click", loadSampleData);
       clearBtn.addEventListener("click", clearResults);
+      saveModelBtn.addEventListener("click", saveModel);
+      runModelBtn.addEventListener("click", runModel);
+      runDownstreamBtn.addEventListener("click", runDownstream);
 
       async function resetLocalFireproof() {
         const ok = window.confirm(
@@ -537,6 +741,8 @@
           }
           setStatus("Local Fireproof data cleared.");
           savedList.textContent = "Fireproof not connected.";
+          runLogList.textContent = "Fireproof not connected.";
+          modelList.textContent = "Fireproof not connected.";
           setTimeout(() => window.location.reload(), 300);
         } catch (err) {
           setStatus("Failed to reset Fireproof data.", true);
@@ -571,7 +777,169 @@
         }
         await conn.query(sql);
         editor.value = `SELECT * FROM ${table} LIMIT 50;`;
+        setDatasetInfo(await computeFileFingerprint(file));
         setStatus(`Imported ${file.name} as ${table}.`);
+      }
+
+      function normalizeModelName(name) {
+        return name.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+      }
+
+      function extractDependencies(sql) {
+        const deps = new Set();
+        const regex = /\bmodel__([a-z0-9_]+)\b/gi;
+        let match = null;
+        while ((match = regex.exec(sql))) {
+          deps.add(match[1].toLowerCase());
+        }
+        return Array.from(deps);
+      }
+
+      function buildDependencyGraph(items) {
+        const graph = new Map();
+        items.forEach((item) => {
+          graph.set(item.name, extractDependencies(item.sql));
+        });
+        return graph;
+      }
+
+      function findDownstream(target, graph) {
+        const downstream = new Set();
+        const entries = Array.from(graph.entries());
+        let changed = true;
+        while (changed) {
+          changed = false;
+          entries.forEach(([name, deps]) => {
+            if (name === target || downstream.has(name)) return;
+            if (deps.includes(target) || deps.some((dep) => downstream.has(dep))) {
+              downstream.add(name);
+              changed = true;
+            }
+          });
+        }
+        return Array.from(downstream);
+      }
+
+      function topologicalOrder(names, graph) {
+        const visited = new Set();
+        const result = [];
+
+        function visit(name) {
+          if (visited.has(name)) return;
+          visited.add(name);
+          const deps = graph.get(name) || [];
+          deps.forEach((dep) => {
+            if (names.has(dep)) visit(dep);
+          });
+          result.push(name);
+        }
+
+        names.forEach((name) => visit(name));
+        return result;
+      }
+
+      async function renderModels() {
+        if (!fp) return;
+        const doc = await fp.get("models");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        modelState.items = items;
+        if (!items.length) {
+          modelList.textContent = "No models yet.";
+          return;
+        }
+        modelList.innerHTML = "";
+        items.forEach((item) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const dirtyMark = modelState.dirty.has(item.name) ? " *" : "";
+          btn.textContent = `${item.name}${dirtyMark}`;
+          btn.addEventListener("click", () => {
+            modelNameInput.value = item.name;
+            editor.value = item.sql;
+          });
+          modelList.appendChild(btn);
+        });
+      }
+
+      async function createOrReplaceModelView(name, sql) {
+        if (!conn) return;
+        const viewName = `model__${name}`;
+        const cleaned = sql.trim().replace(/;+\s*$/, "");
+        await conn.query(`CREATE OR REPLACE VIEW ${viewName} AS ${cleaned}`);
+      }
+
+      async function saveModel() {
+        if (!fp) return;
+        const nameRaw = modelNameInput.value;
+        const sql = editor.value.trim();
+        const name = normalizeModelName(nameRaw);
+        if (!name) {
+          setStatus("Model name required.", true);
+          return;
+        }
+        if (!sql) {
+          setStatus("Model SQL is empty.", true);
+          return;
+        }
+        const doc = await fp.get("models");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        const next = items.filter((item) => item.name !== name);
+        next.unshift({ name, sql, ts: Date.now() });
+        await fp.put({ ...doc, items: next });
+        await createOrReplaceModelView(name, sql);
+        const graph = buildDependencyGraph(next);
+        const downstream = findDownstream(name, graph);
+        downstream.forEach((item) => modelState.dirty.add(item));
+        modelState.dirty.delete(name);
+        await renderModels();
+        setStatus(`Saved model ${name}.`);
+      }
+
+      async function runModel() {
+        if (!fp) return;
+        const name = normalizeModelName(modelNameInput.value);
+        if (!name) {
+          setStatus("Model name required.", true);
+          return;
+        }
+        const doc = await fp.get("models");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        const item = items.find((model) => model.name === name);
+        if (!item) {
+          setStatus("Model not found.", true);
+          return;
+        }
+        await createOrReplaceModelView(name, item.sql);
+        modelState.dirty.delete(name);
+        await renderModels();
+        setStatus(`Ran model ${name}.`);
+      }
+
+      async function runDownstream() {
+        if (!fp) return;
+        const name = normalizeModelName(modelNameInput.value);
+        if (!name) {
+          setStatus("Model name required.", true);
+          return;
+        }
+        const doc = await fp.get("models");
+        const items = Array.isArray(doc.items) ? doc.items : [];
+        const graph = buildDependencyGraph(items);
+        const downstream = new Set(findDownstream(name, graph));
+        if (!downstream.size) {
+          setStatus("No downstream models found.");
+          return;
+        }
+        const order = topologicalOrder(downstream, graph);
+        for (const modelName of order) {
+          const item = items.find((model) => model.name === modelName);
+          if (item) {
+            await createOrReplaceModelView(item.name, item.sql);
+            modelState.dirty.delete(item.name);
+          }
+        }
+        await renderModels();
+        setStatus(`Ran downstream models for ${name}.`);
       }
 
       function handleFiles(files) {
