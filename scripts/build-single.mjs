@@ -49,13 +49,10 @@ if (!fs.existsSync(fireproofDist)) {
 
 const duckdbModulePath = findFile(duckdbDist, [/duckdb-browser\.mjs$/]);
 const wasmMvpPath = findFile(duckdbDist, [/duckdb-mvp\.wasm$/]);
-const wasmEhPath = findFile(duckdbDist, [/duckdb-eh\.wasm$/]);
 const workerMvpPath = findFile(duckdbDist, [/duckdb-browser-mvp\.worker\.js$/]);
-const workerEhPath = findFile(duckdbDist, [/duckdb-browser-eh\.worker\.js$/]);
-const pthreadPath = findFile(duckdbDist, [/pthread.*worker\.js$/]);
 
-if (!duckdbModulePath || !wasmMvpPath || !wasmEhPath || !workerMvpPath || !workerEhPath) {
-  throw new Error("DuckDB wasm assets not found in node_modules/@duckdb/duckdb-wasm/dist");
+if (!duckdbModulePath || !wasmMvpPath || !workerMvpPath) {
+  throw new Error("DuckDB MVP wasm assets not found in node_modules/@duckdb/duckdb-wasm/dist");
 }
 
 const fireproofModulePath = findFile(path.join(fireproofDist, "src"), [/fireproof\.mjs$/]);
@@ -68,6 +65,7 @@ const bundledDuckdb = await esbuild.build({
   bundle: true,
   format: "esm",
   platform: "browser",
+  minify: true,
   write: false
 });
 
@@ -76,6 +74,7 @@ const bundledFireproof = await esbuild.build({
   bundle: true,
   format: "esm",
   platform: "browser",
+  minify: true,
   write: false
 });
 
@@ -87,11 +86,6 @@ const bundles = {
     mainModule: toDataUrl(readBinary(wasmMvpPath), "application/wasm"),
     mainWorker: toDataUrl(readBinary(workerMvpPath), "text/javascript"),
     pthreadWorker: null
-  },
-  eh: {
-    mainModule: toDataUrl(readBinary(wasmEhPath), "application/wasm"),
-    mainWorker: toDataUrl(readBinary(workerEhPath), "text/javascript"),
-    pthreadWorker: pthreadPath ? toDataUrl(readBinary(pthreadPath), "text/javascript") : null
   }
 };
 
