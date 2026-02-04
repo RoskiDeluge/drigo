@@ -252,7 +252,7 @@
         </div>
 
         <div class="history">
-          <strong>Run Log (Fireproof)</strong>
+          <strong>Run Log</strong>
           <div id="runLogList" class="note">No run log yet.</div>
         </div>
 
@@ -262,8 +262,8 @@
         </div>
 
         <div class="history">
-          <strong>Saved Queries (Fireproof)</strong>
-          <div id="savedList" class="note">Fireproof not connected.</div>
+          <strong>Saved Queries</strong>
+          <div id="savedList" class="note">No saved queries yet.</div>
         </div>
 
         <div class="status">
@@ -283,8 +283,8 @@
 
         <div class="status">
           <strong>Maintenance</strong>
-          <button class="secondary" id="resetBtn" type="button">Reset Local Fireproof Data</button>
-          <div class="note">Clears local Fireproof storage for the drigo db only.</div>
+          <button class="secondary" id="resetBtn" type="button">Reset Local Storage</button>
+          <div class="note">Clears saved queries, run log, and models for this browser.</div>
         </div>
       </aside>
 
@@ -313,24 +313,24 @@
           URL.revokeObjectURL(url);
           return mod;
         }
+        if (window.__DRIGO_DUCKDB_MODULE_URL__) {
+          const url = window.__DRIGO_DUCKDB_MODULE_URL__;
+          try {
+            return await import(url);
+          } catch (err) {
+            const name = url.split("/").pop();
+            if (name && !url.startsWith("/dist/")) {
+              return await import(`/dist/${name}`);
+            }
+            throw err;
+          }
+        }
         return await import(
           "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@latest/dist/duckdb-browser.mjs"
         );
       }
 
-      async function loadFireproofModule() {
-        if (window.__DRIGO_FIREPROOF_MODULE__) {
-          const blob = new Blob([window.__DRIGO_FIREPROOF_MODULE__], { type: "text/javascript" });
-          const url = URL.createObjectURL(blob);
-          const mod = await import(url);
-          URL.revokeObjectURL(url);
-          return mod;
-        }
-        return await import("https://cdn.jsdelivr.net/npm/@fireproof/core@0.5.13/dist/src/fireproof.mjs");
-      }
-
       const duckdb = await loadDuckDBModule();
-      const fireproofModule = await loadFireproofModule();
 
       const statusLine = document.getElementById("statusLine");
       const editor = document.getElementById("editor");
@@ -353,10 +353,12 @@
       const resetBtn = document.getElementById("resetBtn");
 
       const historyKey = "drigo.query.history";
+      const savedKey = "drigo.saved.queries";
+      const runLogKey = "drigo.run.log";
+      const modelsKey = "drigo.models";
       const historyLimit = 12;
       let db = null;
       let conn = null;
-      let fp = null;
       let currentDataset = null;
       let modelState = { items: [], dirty: new Set() };
 
@@ -407,46 +409,37 @@
         renderHistory();
       }
 
-      async function initFireproof() {
-        const Fireproof = fireproofModule && fireproofModule.Fireproof;
-        if (!Fireproof || !Fireproof.storage) {
-          savedList.textContent = "Fireproof not available.";
-          runLogList.textContent = "Fireproof not available.";
-          modelList.textContent = "Fireproof not available.";
-          return;
+      function readStore(key, fallback) {
+        const raw = localStorage.getItem(key);
+        if (!raw) return fallback;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return fallback;
         }
-        fp = Fireproof.storage("drigo");
-        await ensureSavedDoc();
-        await ensureRunLogDoc();
-        await ensureModelsDoc();
+      }
+
+      function writeStore(key, value) {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
+
+      async function initStorage() {
         await renderSavedQueries();
         await renderRunLog();
         await renderModels();
       }
 
-      async function ensureSavedDoc() {
-        try {
-          await fp.get("saved-queries");
-        } catch {
-          await fp.put({ _id: "saved-queries", items: [] });
-        }
-      }
-
-      async function saveQueryToFireproof(query) {
-        if (!fp) return;
+      async function saveQueryToStorage(query) {
         const trimmed = query.trim();
         if (!trimmed) return;
-        const doc = await fp.get("saved-queries");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(savedKey, []);
         const next = [{ text: trimmed, ts: Date.now() }, ...items].slice(0, historyLimit);
-        await fp.put({ ...doc, items: next });
+        writeStore(savedKey, next);
         await renderSavedQueries();
       }
 
       async function renderSavedQueries() {
-        if (!fp) return;
-        const doc = await fp.get("saved-queries");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(savedKey, []);
         if (!items.length) {
           savedList.textContent = "No saved queries yet.";
           return;
@@ -463,22 +456,6 @@
         });
       }
 
-      async function ensureRunLogDoc() {
-        try {
-          await fp.get("run-log");
-        } catch {
-          await fp.put({ _id: "run-log", items: [] });
-        }
-      }
-
-      async function ensureModelsDoc() {
-        try {
-          await fp.get("models");
-        } catch {
-          await fp.put({ _id: "models", items: [] });
-        }
-      }
-
       function formatTimestamp(ts) {
         const date = new Date(ts);
         return date.toLocaleString();
@@ -490,18 +467,14 @@
       }
 
       async function appendRunLog(entry) {
-        if (!fp) return;
-        const doc = await fp.get("run-log");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(runLogKey, []);
         const next = [entry, ...items].slice(0, historyLimit);
-        await fp.put({ ...doc, items: next });
+        writeStore(runLogKey, next);
         await renderRunLog();
       }
 
       async function renderRunLog() {
-        if (!fp) return;
-        const doc = await fp.get("run-log");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(runLogKey, []);
         if (!items.length) {
           runLogList.textContent = "No run log yet.";
           return;
@@ -653,7 +626,7 @@
           const rows = result.toArray();
           renderResult(result, rows);
           recordHistory(query);
-          await saveQueryToFireproof(query);
+          await saveQueryToStorage(query);
           await appendRunLog({
             ts: Date.now(),
             sql: query.trim(),
@@ -714,38 +687,21 @@
       runModelBtn.addEventListener("click", runModel);
       runDownstreamBtn.addEventListener("click", runDownstream);
 
-      async function resetLocalFireproof() {
+      async function resetLocalStorage() {
         const ok = window.confirm(
-          "This will clear local Fireproof data for the drigo db only. Continue?"
+          "This will clear local saved queries, run log, and models. Continue?"
         );
         if (!ok) return;
         try {
-          const dbName = "drigo";
-          const configKey = `fp.${dbName}`;
-          localStorage.removeItem(configKey);
-          if (indexedDB && indexedDB.databases) {
-            const dbs = await indexedDB.databases();
-            await Promise.all(
-              dbs
-                .filter((db) => db.name && db.name.includes(`.${dbName}.`))
-                .map(
-                  (db) =>
-                    new Promise((resolve) => {
-                      const req = indexedDB.deleteDatabase(db.name);
-                      req.onsuccess = () => resolve();
-                      req.onerror = () => resolve();
-                      req.onblocked = () => resolve();
-                    })
-                )
-            );
-          }
-          setStatus("Local Fireproof data cleared.");
-          savedList.textContent = "Fireproof not connected.";
-          runLogList.textContent = "Fireproof not connected.";
-          modelList.textContent = "Fireproof not connected.";
+          localStorage.removeItem(savedKey);
+          localStorage.removeItem(runLogKey);
+          localStorage.removeItem(modelsKey);
+          savedList.textContent = "No saved queries yet.";
+          runLogList.textContent = "No run log yet.";
+          modelList.textContent = "No models yet.";
           setTimeout(() => window.location.reload(), 300);
         } catch (err) {
-          setStatus("Failed to reset Fireproof data.", true);
+          setStatus("Failed to reset local storage.", true);
           console.error(err);
         }
       }
@@ -839,9 +795,7 @@
       }
 
       async function renderModels() {
-        if (!fp) return;
-        const doc = await fp.get("models");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(modelsKey, []);
         modelState.items = items;
         if (!items.length) {
           modelList.textContent = "No models yet.";
@@ -869,7 +823,6 @@
       }
 
       async function saveModel() {
-        if (!fp) return;
         const nameRaw = modelNameInput.value;
         const sql = editor.value.trim();
         const name = normalizeModelName(nameRaw);
@@ -881,11 +834,10 @@
           setStatus("Model SQL is empty.", true);
           return;
         }
-        const doc = await fp.get("models");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(modelsKey, []);
         const next = items.filter((item) => item.name !== name);
         next.unshift({ name, sql, ts: Date.now() });
-        await fp.put({ ...doc, items: next });
+        writeStore(modelsKey, next);
         await createOrReplaceModelView(name, sql);
         const graph = buildDependencyGraph(next);
         const downstream = findDownstream(name, graph);
@@ -896,14 +848,12 @@
       }
 
       async function runModel() {
-        if (!fp) return;
         const name = normalizeModelName(modelNameInput.value);
         if (!name) {
           setStatus("Model name required.", true);
           return;
         }
-        const doc = await fp.get("models");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(modelsKey, []);
         const item = items.find((model) => model.name === name);
         if (!item) {
           setStatus("Model not found.", true);
@@ -916,14 +866,12 @@
       }
 
       async function runDownstream() {
-        if (!fp) return;
         const name = normalizeModelName(modelNameInput.value);
         if (!name) {
           setStatus("Model name required.", true);
           return;
         }
-        const doc = await fp.get("models");
-        const items = Array.isArray(doc.items) ? doc.items : [];
+        const items = readStore(modelsKey, []);
         const graph = buildDependencyGraph(items);
         const downstream = new Set(findDownstream(name, graph));
         if (!downstream.size) {
@@ -966,11 +914,10 @@
         handleFiles(event.dataTransfer.files);
       });
       fileInput.addEventListener("change", (event) => handleFiles(event.target.files));
-      resetBtn.addEventListener("click", resetLocalFireproof);
+      resetBtn.addEventListener("click", resetLocalStorage);
 
       renderHistory();
-      initFireproof().catch((err) => {
-        savedList.textContent = "Fireproof init failed.";
+      initStorage().catch((err) => {
         console.error(err);
       });
       initDuckDB().catch((err) => {

@@ -14,10 +14,6 @@ function readText(filePath) {
   return fs.readFileSync(filePath, "utf8");
 }
 
-function readBinary(filePath) {
-  return fs.readFileSync(filePath);
-}
-
 function findFile(dir, patterns) {
   const files = fs.readdirSync(dir);
   for (const pattern of patterns) {
@@ -25,11 +21,6 @@ function findFile(dir, patterns) {
     if (match) return path.join(dir, match);
   }
   return null;
-}
-
-function toDataUrl(buffer, mime) {
-  const b64 = buffer.toString("base64");
-  return `data:${mime};base64,${b64}`;
 }
 
 function inlineScriptTag(content) {
@@ -59,28 +50,31 @@ const bundledDuckdb = await esbuild.build({
   write: false
 });
 
-const duckdbModule = bundledDuckdb.outputFiles[0].text;
+ensureDir(distDir);
+
+fs.writeFileSync(path.join(distDir, "duckdb.mjs"), bundledDuckdb.outputFiles[0].text);
+
+fs.copyFileSync(wasmMvpPath, path.join(distDir, "duckdb-mvp.wasm"));
+fs.copyFileSync(workerMvpPath, path.join(distDir, "duckdb-mvp.worker.js"));
 
 const bundles = {
   mvp: {
-    mainModule: toDataUrl(readBinary(wasmMvpPath), "application/wasm"),
-    mainWorker: toDataUrl(readBinary(workerMvpPath), "text/javascript"),
+    mainModule: "./duckdb-mvp.wasm",
+    mainWorker: "./duckdb-mvp.worker.js",
     pthreadWorker: null
   }
 };
 
 const inlineGlobals = [
-  `window.__DRIGO_DUCKDB_MODULE__ = ${JSON.stringify(duckdbModule)};`,
+  `window.__DRIGO_DUCKDB_MODULE_URL__ = "./duckdb.mjs";`,
   `window.__DRIGO_DUCKDB_BUNDLES__ = ${JSON.stringify(bundles)};`
 ].join("\n");
 
 const inlineBundleScript = inlineScriptTag(inlineGlobals);
 
 let html = readText(indexPath);
-
 html = html.replace("<script type=\"module\">", `${inlineBundleScript}\n<script type="module">`);
 
-ensureDir(distDir);
 fs.writeFileSync(path.join(distDir, "index.html"), html);
 
-console.log("Built single-file output at dist/index.html");
+console.log("Built multi-file output at dist/ (index.html + assets)");

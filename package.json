@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:single": "node scripts/build-single.mjs"
+    "build:single": "node scripts/build-single.mjs",
+    "build:multi": "node scripts/build-multi.mjs"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.28.1",
-    "@fireproof/core": "^0.5.13",
     "esbuild": "^0.20.2"
   }
 }
