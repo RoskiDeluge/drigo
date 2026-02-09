@@ -1,11 +1,11 @@
 # Drigo
 
-Minimal single-file DuckDB + Fireproof workbench for local data exploration.
+Minimal single-file DuckDB workbench for local data exploration.
 
 ## What it does
 - In-browser DuckDB for SQL queries
 - Drag/drop CSV/Parquet/JSON import
-- Local saved queries via Fireproof
+- Local saved queries
 - Optional single-file offline build
 
 ## Quick start (online)
