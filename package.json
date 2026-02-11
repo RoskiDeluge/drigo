@@ -1,5 +1,6 @@
 {
   "name": "drigo",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,5 +10,8 @@
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.28.1",
     "esbuild": "^0.20.2"
+  },
+  "devDependencies": {
+    "reffy-ts": "github:RoskiDeluge/reffy-ts"
   }
 }

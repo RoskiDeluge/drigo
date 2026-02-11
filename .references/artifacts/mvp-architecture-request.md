@@ -1,0 +1,1 @@
+If you paste (or describe) your current MVP architecture in ~10 lines — e.g., what you’re using for DuckDB-wasm init, where Fireproof sits, how you embed deps in offline build — I can point to the highest-leverage change for your exact setup and the most likely gotcha you’ll hit next.

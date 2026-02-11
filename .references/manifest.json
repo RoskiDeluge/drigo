@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "created_at": "2026-02-11T22:10:06.892Z",
+  "updated_at": "2026-02-11T22:11:20.339Z",
+  "artifacts": [
+    {
+      "id": "eac352aa-55ac-4f66-8d27-5edf3e7dea04",
+      "name": "initial",
+      "filename": "initial.md",
+      "kind": "note",
+      "mime_type": "text/markdown",
+      "size_bytes": 8748,
+      "tags": [],
+      "created_at": "2026-02-11T22:11:20.337Z",
+      "updated_at": "2026-02-11T22:11:20.337Z"
+    },
+    {
+      "id": "5d69f334-287d-4de0-a57b-b4d05763b030",
+      "name": "mvp architecture request",
+      "filename": "mvp-architecture-request.md",
+      "kind": "note",
+      "mime_type": "text/markdown",
+      "size_bytes": 294,
+      "tags": [],
+      "created_at": "2026-02-11T22:11:20.338Z",
+      "updated_at": "2026-02-11T22:11:20.338Z"
+    },
+    {
+      "id": "6d4b2181-8086-4cc3-8d53-3cdc2c99cb84",
+      "name": "mvp architecture summary",
+      "filename": "mvp-architecture-summary.md",
+      "kind": "note",
+      "mime_type": "text/markdown",
+      "size_bytes": 794,
+      "tags": [],
+      "created_at": "2026-02-11T22:11:20.339Z",
+      "updated_at": "2026-02-11T22:11:20.339Z"
+    },
+    {
+      "id": "de93a084-2df6-4b92-82ba-b67f1b939bb0",
+      "name": "response mvp architecture summary",
+      "filename": "response-mvp-architecture-summary.md",
+      "kind": "note",
+      "mime_type": "text/markdown",
+      "size_bytes": 4435,
+      "tags": [],
+      "created_at": "2026-02-11T22:11:20.339Z",
+      "updated_at": "2026-02-11T22:11:20.339Z"
+    }
+  ]
+}
