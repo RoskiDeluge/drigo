@@ -356,6 +356,7 @@
       const savedKey = "drigo.saved.queries";
       const runLogKey = "drigo.run.log";
       const modelsKey = "drigo.models";
+      const persistentDbPath = "opfs://drigo.duckdb";
       const historyLimit = 12;
       let db = null;
       let conn = null;
@@ -420,7 +421,10 @@
       }
 
       function writeStore(key, value) {
-        localStorage.setItem(key, JSON.stringify(value));
+        localStorage.setItem(
+          key,
+          JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v))
+        );
       }
 
       async function initStorage() {
@@ -552,8 +556,24 @@
             );
         db = new duckdb.AsyncDuckDB(logger, worker);
         await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        let storageMode = "memory";
+        try {
+          await db.open({
+            path: persistentDbPath,
+            accessMode: duckdb.DuckDBAccessMode.READ_WRITE,
+            opfs: { fileHandling: "auto" }
+          });
+          storageMode = "persistent";
+        } catch (err) {
+          console.warn("Persistent DuckDB storage unavailable. Falling back to in-memory mode.", err);
+          await db.open({ path: ":memory:" });
+        }
         conn = await db.connect();
-        setStatus("DuckDB ready.");
+        if (storageMode === "persistent") {
+          setStatus("DuckDB ready. Persistent local storage enabled.");
+        } else {
+          setStatus("DuckDB ready in memory mode. Persistent storage unavailable.");
+        }
       }
 
       function setDatasetInfo(info) {
