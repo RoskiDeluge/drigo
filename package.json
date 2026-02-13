@@ -10,8 +10,5 @@
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.28.1",
     "esbuild": "^0.20.2"
-  },
-  "devDependencies": {
-    "reffy-ts": "github:RoskiDeluge/reffy-ts"
   }
 }
